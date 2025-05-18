@@ -1,0 +1,39 @@
+version: "3.8"
+services:
+  postgres:
+    image: postgres:15
+    container_name: ejbca-db
+    restart: always
+    environment:
+      POSTGRES_DB: ejbca
+      POSTGRES_USER: ejbca
+      POSTGRES_PASSWORD: C#D8jYf!rZ2aS7uP3tL1
+    volumes:
+      - ejbca_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  ejbca:
+    image: keyfactor/ejbca-ce
+    container_name: ejbca
+    restart: always
+    environment:
+      TLS_SETUP_ENABLED: "true"
+      DATABASE_JDBC_URL: "jdbc:postgresql://ejbca-db:5432/ejbca"
+      DATABASE_USER: "ejbca"
+      DATABASE_PASSWORD: "C#D8jYf!rZ2aS7uP3tL1"
+      PASSWORD_ENCRYPTION_KEY: "W3@zR4tLpV9sB8yK5gQ2cM6dX7eJ0nA1"
+      CA_KEYSTOREPASS: "Y!c5Bv2Xw8@tMz6Pq3#"
+      EJBCA_CLI_DEFAULTPASSWORD: "Z2pL!k6qF7@uX4sB3t"
+      HTTPSERVER_HOSTNAME: "10.224.144.138"
+    volumes:
+      - ejbca_data:/mnt/persistent
+    ports:
+      - "80:8080"
+      - "443:8443"
+    depends_on:
+      - postgres
+
+volumes:
+  ejbca_pgdata:
+  ejbca_data:
