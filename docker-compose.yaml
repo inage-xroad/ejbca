@@ -1,39 +1,52 @@
-version: "3.8"
+version: "3.9"
+
+networks:
+  access-bridge:
+    driver: bridge
+  application-bridge:
+    driver: bridge
+
+volumes:
+  ejbca-mysql-data:
+
 services:
-  postgres:
-    image: postgres:15
-    container_name: ejbca-db
-    restart: always
+
+  ejbca-database:
+    container_name: ejbca-database
+    image: mariadb:11.1  # versão explícita para garantir estabilidade
+    restart: unless-stopped
+    networks:
+      - application-bridge
     environment:
-      POSTGRES_DB: ejbca
-      POSTGRES_USER: ejbca
-      POSTGRES_PASSWORD: C#D8jYf!rZ2aS7uP3tL1
+      MYSQL_ROOT_PASSWORD: foo123
+      MYSQL_DATABASE: ejbca
+      MYSQL_USER: ejbca
+      MYSQL_PASSWORD: ejbca
     volumes:
-      - ejbca_pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - ejbca-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   ejbca:
-    image: keyfactor/ejbca-ce
+    hostname: testeca
     container_name: ejbca
-    restart: always
+    image: keyfactor/ejbca-ce:latest
+    depends_on:
+      ejbca-database:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - access-bridge
+      - application-bridge
     environment:
-      TLS_SETUP_ENABLED: "true"
-      DATABASE_JDBC_URL: "jdbc:postgresql://ejbca-db:5432/ejbca"
-      DATABASE_USER: "ejbca"
-      DATABASE_PASSWORD: "C#D8jYf!rZ2aS7uP3tL1"
-      PASSWORD_ENCRYPTION_KEY: "W3@zR4tLpV9sB8yK5gQ2cM6dX7eJ0nA1"
-      CA_KEYSTOREPASS: "Y!c5Bv2Xw8@tMz6Pq3#"
-      EJBCA_CLI_DEFAULTPASSWORD: "Z2pL!k6qF7@uX4sB3t"
-      HTTPSERVER_HOSTNAME: "10.224.144.138"
-    volumes:
-      - ejbca_data:/mnt/persistent
+      DATABASE_JDBC_URL: jdbc:mariadb://ejbca-database:3306/ejbca?characterEncoding=UTF-8
+      LOG_LEVEL_APP: INFO
+      LOG_LEVEL_SERVER: INFO
+      TLS_SETUP_ENABLED: simple
+      HTTPSERVER_HOSTNAME: testeca
     ports:
       - "80:8080"
       - "443:8443"
-    depends_on:
-      - postgres
-
-volumes:
-  ejbca_pgdata:
-  ejbca_data:
