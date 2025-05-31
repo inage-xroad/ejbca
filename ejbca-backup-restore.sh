@@ -1,12 +1,17 @@
-!/bin/bash
+#!/bin/bash
 
-# Diretório de backup ajustado para ambiente com permissão de escrita
+set -euo pipefail
+
+# Caminho base do projeto (pasta onde o docker-compose.yml está)
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE_FILE="${BASE_DIR}/docker-compose.yml"
+
+# Diretório de backup (personalize conforme necessário)
 BACKUP_DIR="/home/backup/ejbca"
 TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-BACKUP_NAME="ejbca-backup-$TIMESTAMP"
+BACKUP_NAME="ejbca-backup-${TIMESTAMP}"
 DB_VOLUME="db_data"
 EJBCA_VOLUME="ejbca_data"
-COMPOSE_FILE="docker-compose.yml"  # Ajuste o caminho se estiver fora do diretório atual
 
 # Garante que o diretório de backup existe
 mkdir -p "$BACKUP_DIR"
@@ -20,52 +25,68 @@ usage() {
 }
 
 backup() {
-  echo "Parando os serviços..."
+  echo "[INFO] Parando os serviços do EJBCA..."
   docker compose -f "$COMPOSE_FILE" down
 
-  echo "Criando backup do volume do banco de dados ($DB_VOLUME)..."
-  docker run --rm -v ${DB_VOLUME}:/volume -v "$BACKUP_DIR":/backup alpine tar czf /backup/${BACKUP_NAME}-db.tar.gz -C /volume .
+  echo "[INFO] Criando backup do volume do banco de dados (${DB_VOLUME})..."
+  docker run --rm \
+    -v ${DB_VOLUME}:/volume \
+    -v "$BACKUP_DIR":/backup \
+    alpine \
+    tar czf /backup/${BACKUP_NAME}-db.tar.gz -C /volume .
 
-  echo "Criando backup do volume do EJBCA ($EJBCA_VOLUME)..."
-  docker run --rm -v ${EJBCA_VOLUME}:/volume -v "$BACKUP_DIR":/backup alpine tar czf /backup/${BACKUP_NAME}-ejbca.tar.gz -C /volume .
+  echo "[INFO] Criando backup do volume da aplicação (${EJBCA_VOLUME})..."
+  docker run --rm \
+    -v ${EJBCA_VOLUME}:/volume \
+    -v "$BACKUP_DIR":/backup \
+    alpine \
+    tar czf /backup/${BACKUP_NAME}-ejbca.tar.gz -C /volume .
 
-  echo "Backup concluído: $BACKUP_DIR"
+  echo "[OK] Backup criado em: $BACKUP_DIR"
 }
 
 restore() {
   BACKUP_FOLDER="$1"
-  [ -z "$BACKUP_FOLDER" ] && echo "Erro: diretório de backup não informado." && usage
+  if [[ -z "$BACKUP_FOLDER" || ! -d "$BACKUP_FOLDER" ]]; then
+    echo "[ERRO] Diretório de backup inválido: '$BACKUP_FOLDER'"
+    usage
+  fi
 
-  echo "Parando os serviços..."
-  docker compose -f "$COMPOSE_FILE" down -v
+  echo "[INFO] Parando e removendo serviços e volumes..."
+  docker compose -f "$COMPOSE_FILE" down -v || true
+  docker volume rm -f ${DB_VOLUME} ${EJBCA_VOLUME} || true
 
-  echo "Removendo volumes antigos..."
-  docker volume rm ${DB_VOLUME} ${EJBCA_VOLUME}
-
-  echo "Restaurando volume do banco de dados..."
+  echo "[INFO] Restaurando volume do banco de dados (${DB_VOLUME})..."
   docker volume create ${DB_VOLUME}
-  docker run --rm -v ${DB_VOLUME}:/volume -v "$BACKUP_FOLDER":/backup alpine tar xzf /backup/*-db.tar.gz -C /volume
+  docker run --rm \
+    -v ${DB_VOLUME}:/volume \
+    -v "$BACKUP_FOLDER":/backup \
+    alpine \
+    tar xzf /backup/*-db.tar.gz -C /volume
 
-  echo "Restaurando volume do EJBCA..."
+  echo "[INFO] Restaurando volume da aplicação (${EJBCA_VOLUME})..."
   docker volume create ${EJBCA_VOLUME}
-  docker run --rm -v ${EJBCA_VOLUME}:/volume -v "$BACKUP_FOLDER":/backup alpine tar xzf /backup/*-ejbca.tar.gz -C /volume
+  docker run --rm \
+    -v ${EJBCA_VOLUME}:/volume \
+    -v "$BACKUP_FOLDER":/backup \
+    alpine \
+    tar xzf /backup/*-ejbca.tar.gz -C /volume
 
-  echo "Iniciando os serviços..."
+  echo "[INFO] Iniciando os serviços..."
   docker compose -f "$COMPOSE_FILE" up -d
 
-  echo "Restauração concluída."
+  echo "[OK] Restauração concluída com sucesso."
 }
 
-case "$1" in
+# Main
+case "${1:-}" in
   backup)
     backup
     ;;
   restore)
-    restore "$2"
+    restore "${2:-}"
     ;;
   *)
     usage
     ;;
 esac
-
-                                         
