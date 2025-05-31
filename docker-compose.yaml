@@ -1,5 +1,3 @@
-version: "3.9"
-
 networks:
   access-bridge:
     driver: bridge
@@ -7,46 +5,45 @@ networks:
     driver: bridge
 
 volumes:
-  ejbca-mysql-data:
+  db_data:
+  ejbca_data:
 
 services:
-
   ejbca-database:
+    image: mariadb:10.11.13
     container_name: ejbca-database
-    image: mariadb:11.1  # versão explícita para garantir estabilidade
-    restart: unless-stopped
+    restart: always
+    env_file: .env
     networks:
       - application-bridge
-    environment:
-      MYSQL_ROOT_PASSWORD: foo123
-      MYSQL_DATABASE: ejbca
-      MYSQL_USER: ejbca
-      MYSQL_PASSWORD: ejbca
     volumes:
-      - ejbca-mysql-data:/var/lib/mysql
+      - db_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD-SHELL", "mysqladmin ping -u ${MYSQL_USER} -p${MYSQL_PASSWORD}"]
+      interval: 20s
+      timeout: 10s
       retries: 5
 
   ejbca:
-    hostname: testeca
+    image: keyfactor/ejbca-ce:8.0.0
     container_name: ejbca
-    image: keyfactor/ejbca-ce:latest
+    hostname: ejbca-node1
     depends_on:
       ejbca-database:
         condition: service_healthy
-    restart: unless-stopped
+    restart: always
+    env_file: .env
     networks:
       - access-bridge
       - application-bridge
     environment:
-      DATABASE_JDBC_URL: jdbc:mariadb://ejbca-database:3306/ejbca?characterEncoding=UTF-8
-      LOG_LEVEL_APP: INFO
-      LOG_LEVEL_SERVER: INFO
-      TLS_SETUP_ENABLED: simple
-      HTTPSERVER_HOSTNAME: testeca
+      - DATABASE_JDBC_URL=jdbc:mariadb://ejbca-database:3306/${MYSQL_DATABASE}?characterEncoding=UTF-8
+      - DATABASE_USERNAME=${MYSQL_USER}
+      - DATABASE_PASSWORD=${MYSQL_PASSWORD}
+      - LOG_LEVEL_APP=INFO
+      - LOG_LEVEL_SERVER=INFO
+      - TLS_SETUP_ENABLED=simple
     ports:
-      - "80:8080"
       - "443:8443"
+    volumes:
+      - ejbca_data:/opt/ejbca
